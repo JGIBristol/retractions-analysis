@@ -1,0 +1,128 @@
+---
+title: "Untitled"
+output: html_document
+editor_options:
+  chunk_output_type: console
+---
+
+Descriptive analysis of retraction watch
+data, downloaded [here](https://www.crossref.org/labs/retraction-watch/).
+
+```{r setup, include=FALSE, message=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+
+```{r initial_cleaning}
+library(dplyr)
+library(tibble)
+library(tidyr)
+library(readr)
+library(lubridate)
+library(ggplot2)
+library(httr)
+library(readxl)
+
+# Prepping Retraction Data
+
+retraction_data <- readr::read_csv('data/retractions.csv')
+
+
+countries <- unique(retraction_data$Country)
+number_countries <- lapply(countries, function(x){
+  x <- strsplit(';', countries)
+  return(length(x))
+  }) %>% unlist()
+
+# Cleaning Dates 
+retraction_data$OriginalPaperDate <- gsub(' 0:00',
+                                          '', 
+                                          retraction_data$OriginalPaperDate)
+retraction_data$OriginalPaperDate <- mdy(retraction_data$OriginalPaperDate)
+
+retraction_data$RetractionDate <- gsub(' 0:00',
+                                          '', 
+                                          retraction_data$RetractionDate)
+retraction_data$RetractionDate <- mdy(retraction_data$RetractionDate)
+
+retraction_data <- retraction_data %>%
+  # create row ID:
+  mutate(row = row_number()) %>%
+  # separate rows on " /":
+  separate_rows(Country, sep = ';') %>%
+  # pivot dataframe wider:
+  # pivot_wider(names_from = Country, values_from = Country, 
+  #             values_fn = function(x) 1, values_fill = 0) %>%
+  # deselect obsolete column:
+  select(-row)
+
+# Loading Country Rank Data
+sjr_rank <- readr::read_csv('./data/sjr_rankings_all.csv')
+```
+
+```{r summary_plots}
+
+country_retractions <- retraction_data %>%
+  mutate(retraction_year = format(RetractionDate, "%Y")) %>%
+  filter(`United Kingdom`==1) %>% 
+  group_by(retraction_year) %>%
+  summarise(retractions = n()) %>%
+  arrange(desc(retractions))
+
+
+
+country_retractions$retraction_year <- as.numeric(country_retractions$retraction_year)
+ggplot(country_retractions,aes(x=retraction_year, y=retractions)) +
+  geom_line() +
+  labs(title='Number of UK Retractions Over Time',
+       x='Year',
+       y='Number of Retractions') +
+  theme_minimal() +
+  theme(
+    axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))
+
+retraction_data$lag <- (retraction_data$RetractionDate - 
+  retraction_data$OriginalPaperDate)/365
+ggplot(retraction_data, aes(x=lag)) +
+  geom_histogram(binwidth = 1, boundary = 0,fill='dodgerblue4', color='black') +
+  xlim(0,40)+
+  labs(title='Time Between Publication and Retraction',
+       x='Time to Retraction (Years)',
+       y='Counts') +
+  theme_minimal()
+
+country_retractions$UK <- grepl('United Kingdom', country_retractions$Country)
+
+
+ggplot(country_retractions, aes(x=retraction_year, y=retractions, color=UK)) +
+  geom_line() +
+  labs(title='Number of Retractions by Country Over Time',
+       x='Year',
+       y='Number of Retractions') +
+  theme_minimal()+
+  theme(
+    axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)
+  )
+
+
+subset_temp <- country_retractions[
+  country_retractions$Country %in% c('United States', 'China', 'India', 'Brazil', 'Japan', 'Germany', 'United Kingdom', 'France', 'Italy', 'Canada')]
+
+
+subset_temp <- sjr_rank[
+  sjr_rank$Country %in% c('United States', 'China', 'India', 'Brazil', 'Japan', 'Germany', 'United Kingdom', 'France', 'Italy', 'Canada')]
+
+
+ggplot(subset_temp, aes(x=year, y=Documents, color=Country)) +
+  geom_line() +
+  labs(title='Number of Documents by Country Over Time',
+       x='Year',
+       y='Number of Documents') +
+  theme_minimal()
+
+
+
+
+```
+
